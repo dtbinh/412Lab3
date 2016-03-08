@@ -14,8 +14,8 @@ public class RemoteArm {
 	RMIRegulatedMotor m1;
 	RMIRegulatedMotor m2;
 	Matrix J;
-	
-	
+
+
 	public void goToAngle(double theta1, double theta2) {
 		try {
 			this.m1.rotateTo((int)theta1);
@@ -26,36 +26,36 @@ public class RemoteArm {
 			e.printStackTrace();
 		}
 	}
-	
+
 	public Matrix initJacobian(){
-		double angleMove = 10.0;
+		double angleMove = 25.0;
 		double [][] jacob = {{0,0},{0,0}};
 		double uStart = tracker.x;
 		double vStart = tracker.y;
-		
+
 		this.goToAngle(angleMove, 0);
 
 		double uEnd = tracker.x;
 		double vEnd = tracker.y;
-		
+
 		jacob[0][0] = (uEnd - uStart) / angleMove;
 		jacob[1][0] = (vEnd - vStart) / angleMove;
-		
+
 		this.goToAngle(0, 0);
-		
+
 		uStart = tracker.x;
 		vStart = tracker.y;
-		
+
 		this.goToAngle(0, angleMove);
-		
+
 		uEnd = tracker.x;
 		vEnd = tracker.y;
-		
+
 		jacob[0][1] = (uEnd - uStart) / angleMove;
 		jacob[1][1] = (vEnd - vStart) / angleMove;
-		
+
 		this.goToAngle(0, 0);
-		
+
 		return new Matrix(jacob);
 	}
 
@@ -79,25 +79,29 @@ public class RemoteArm {
 			e.printStackTrace();
 			this.closePorts();
 		}
-		
-		
+
+
 	}
-	
-	public void moveToTarget() {
-		int MAX_INT = 50;
+
+	public void moveToTarget(double x, double y) {
+		int MAX_INT = 100;
+		double MAX_ANGLE = 10;
 		Matrix error, angles, J, Jupdate, deltax;
 		double currentx, currenty, e, eold, threshold;
+
+		//J = initJacobian();
+		this.J = initJacobian();
+		this.J.print(System.out);
 		
-		J = initJacobian();
 		error = new Matrix(2,1);
 		angles = new Matrix(2, 1);
-		
+
 		currentx = tracker.x;
 		currenty = tracker.y;
-		
-		error.set(0, 0, tracker.targetx - currentx);
-		error.set(1, 0, tracker.targety - currenty);
-		
+
+		error.set(0, 0, x - currentx);
+		error.set(1, 0, y - currenty);
+
 		try {
 			angles.set(0, 0, m1.getTachoCount());
 			angles.set(1, 0, m2.getTachoCount());
@@ -106,45 +110,99 @@ public class RemoteArm {
 			this.closePorts();
 			e1.printStackTrace();
 		}
-		
+
+
+
 		//angles = J.inverse().times(error);
-		
-		
+
+
 		e = error.normF();
 		threshold = 20;
-		
+
 		try {
 			for (int i = 1; i<=MAX_INT && e > threshold; i++) {
+				//System.out.println(i);
 				currentx = tracker.x;
 				currenty = tracker.y;
+
+				deltax = this.J.inverse().times(error).times(-0.2);
+				if (Math.abs(deltax.get(0, 0)) > MAX_ANGLE) {
+					deltax.set(0, 0, MAX_ANGLE * Math.signum(deltax.get(0, 0)));
+				}
+				if (Math.abs(deltax.get(1, 0)) > MAX_ANGLE) {
+					deltax.set(1, 0, MAX_ANGLE * Math.signum(deltax.get(1, 0)));
+				}
 				
-				deltax = J.inverse().times(error);
-				angles.plusEquals(deltax.times(-0.01));
-				double theta1 = Math.toDegrees(angles.get(0, 0)) % 360;
-				double theta2 = Math.toDegrees(angles.get(1, 0)) % 360;
+				//System.out.println("DeltaX");
+				//deltax.print(System.out);
+				angles.plusEquals(deltax);
+				//double theta1 = Math.toDegrees(angles.get(0, 0)) % 360;
+				//double theta2 = Math.toDegrees(angles.get(1, 0)) % 360;
+				double theta1 = angles.get(0, 0);
+				double theta2 = angles.get(1, 0);
+				System.out.println(theta1);
+				System.out.println(theta2);
+				
+				
 				this.goToAngle(theta1, theta2);
 
-				error.set(0, 0, tracker.targetx - tracker.x);
-				error.set(1, 0, tracker.targety - tracker.y);
-				
+				error.set(0, 0, x - tracker.x);
+				error.set(1, 0, y - tracker.y);
+
+
+
 				eold = e;
 				e = error.normF();
-				
+
 				if (e > 10+eold) {
 					System.out.println("Broyden Update");
 					Matrix deltay = new Matrix(2,1);
 					deltay.set(0, 0, tracker.x - currentx);
 					deltay.set(1, 0, tracker.y - currenty);
-					
-					J.plusEquals((deltay.minus(J.times(deltax)).times(deltax.transpose())).times(1/deltax.transpose().times(deltax).get(0, 0)));
+
+					Jupdate = (deltay.minus(this.J.times(deltax)).times(deltax.transpose())).times(1/deltax.transpose().times(deltax).get(0, 0));
+					Jupdate = Jupdate.times(0.5);
+					this.J.plusEquals(Jupdate);
+					//this.J.print(System.out);
+					System.out.println("DeltaY");
+					deltay.print(System.out);
 				}
 			}
+			System.out.println("Done");
 		} catch (Exception exc) {
 			this.closePorts();
 			exc.printStackTrace();
 		}
 	}
-	
+
+	public void pathPlanning(){
+		System.out.printf("Target: %f, %f\n", tracker.targetx, tracker.targety);
+		System.out.printf("Current: %f, %f\n", tracker.x, tracker.y);
+		double slope = (tracker.targety - tracker.y) / (tracker.targetx - tracker.x);
+
+		int n = 10;
+		
+		this.J = initJacobian();
+
+		double curX = tracker.x;
+		double curY = tracker.y;
+
+		double deltaX = (tracker.targetx - tracker.x)/n;
+		double deltaY = deltaX*slope;
+
+
+		for(int i = 0; i < n; i++){
+			curX = curX + deltaX;
+			curY = curY + deltaY;
+			
+			System.out.printf("%f, %f\n", curX, curY);
+
+			this.moveToTarget(curX, curY);
+		}
+
+
+	}
+
 	public void closePorts(){
 		try {
 			m1.close();
@@ -155,27 +213,31 @@ public class RemoteArm {
 			this.closePorts();
 		}
 	}
-	
+
 	public static void main(String[] args) {
+			// TODO Auto-generated catch block[] args) {
 		tracker = new TrackerReader();
 		tracker.start();
-		
+
 		Button.waitForAnyPress();
-		
+
 		RemoteArm ra = new RemoteArm();
 		//System.out.println(tracker.targetx);
 		//System.out.println(tracker.targety);
-		
+
 		//ra.J = ra.initJacobian();
 		//ra.J.print(System.out);
-		
 		//while (true) {
-			//Button.waitForAnyPress();
-			ra.moveToTarget();
+			Button.waitForAnyPress();
+			//ra.pathPlanning();
+			//ra.J = initJacobian();
+			ra.moveToTarget(tracker.targetx, tracker.targety);
+			//ra.goToAngle(0.0, 0.0);
+			//ra.closePorts();
+			//ra.pathPlanning();
 		//}
-		
-		ra.closePorts();
-		
-	}
 
+		ra.closePorts();
+
+	}
 }
