@@ -9,15 +9,9 @@ import javax.swing.JFrame;
 import javax.swing.JPanel;
 
 import lejos.hardware.Button;
-import lejos.hardware.port.MotorPort;
-import lejos.hardware.port.SensorPort;
-import lejos.hardware.sensor.EV3UltrasonicSensor;
 import lejos.remote.ev3.RMIRegulatedMotor;
-import lejos.remote.ev3.RMISampleProvider;
 import lejos.remote.ev3.RemoteEV3;
-import lejos.robotics.SampleProvider;
 import lejos.utility.Matrix;
-import lejos.utility.Delay;
 
 public class RemoteArm extends JPanel{
 	public static TrackerReader tracker;
@@ -309,6 +303,8 @@ public class RemoteArm extends JPanel{
 		//}
 
 		ra.closePorts();
-
+		Button.waitForAnyPress();
+		ra.goToAngle(0, 0);
+		
 	}
 }

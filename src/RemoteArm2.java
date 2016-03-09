@@ -82,6 +82,8 @@ public class RemoteArm2 extends JPanel{
 			m1.setSpeed(50);
 			m2.setSpeed(50);
 			
+			this.J = initJacobian();
+			
 			dSensor = new EV3UltrasonicSensor(brick.getPort(SensorPort.S1.getName()));
 			sp = dSensor.getDistanceMode();
 			sample = new float[1];
@@ -107,14 +109,14 @@ public class RemoteArm2 extends JPanel{
 
 	}
 
-	public void moveToTarget(double x, double y) {
+	public void moveToTarget(double x, double y, boolean OD) {
 		int MAX_INT = 10000;
 		double MAX_ANGLE = 15;
 		Matrix error, angles, J, Jupdate, deltax;
 		double currentx, currenty, e, eold, threshold;
 
 		//J = initJacobian();
-		this.J = initJacobian();
+		
 		//this.J.print(System.out);
 		
 		error = new Matrix(2,1);
@@ -151,8 +153,23 @@ public class RemoteArm2 extends JPanel{
 				
 				sp.fetchSample(sample,0);
 				System.out.println(sample[0]);
-				if(sample[0] < 0.1){
-					continue;
+				if(sample[0] <= 0.1 && OD){
+					while(sample[0] <= 0.1){
+						sp.fetchSample(sample,0);
+						m1.rotate(15);
+					}
+					
+					//m2.rotate(45);
+					this.pathPlanning();
+					
+					System.out.println("Done avoiding");
+					angles.set(0, 0, m1.getTachoCount());
+					angles.set(1, 0, m2.getTachoCount());
+					
+					error.set(0, 0, tracker.targetx - tracker.x);
+					error.set(1, 0, tracker.targety - tracker.y);
+					
+
 				}
 				
 				//System.out.println(i);
@@ -213,32 +230,25 @@ public class RemoteArm2 extends JPanel{
 	}
 
 	public void pathPlanning(){
-		System.out.printf("Target: %f, %f\n", tracker.targetx, tracker.targety);
-		System.out.printf("Current: %f, %f\n", tracker.x, tracker.y);
+		System.out.println("Obstacle detected: start path planning");
+		
 		double slope = (tracker.targety - tracker.y) / (tracker.targetx - tracker.x);
 
 		int n = 10;
 		
-		this.J = initJacobian();
-
+		//this.J = initJacobian();
+	
 		double curX = tracker.x;
 		double curY = tracker.y;
 
+		double newX = tracker.x - 20;
+		double newY = tracker.y + 15;
+		
+		
 		double deltaX = (tracker.targetx - tracker.x)/n;
 		double deltaY = deltaX*slope;
 
-
-		for(int i = 0; i < n; i++){
-			if(this.ESC){
-				break;
-			}
-			curX = curX + deltaX;
-			curY = curY + deltaY;
-			
-			System.out.printf("%f, %f\n", curX, curY);
-
-			this.moveToTarget(curX, curY);
-		}
+		this.moveToTarget(newX, newY, false);
 
 
 	}
@@ -316,7 +326,7 @@ public class RemoteArm2 extends JPanel{
 			//Button.waitForAnyPress();
 			//ra.pathPlanning();
 			//ra.J = initJacobian();
-			ra.moveToTarget(tracker.targetx, tracker.targety);
+			ra.moveToTarget(tracker.targetx, tracker.targety, true);
 			//ra.goToAngle(0.0, 0.0);
 			//ra.closePorts();
 			//ra.pathPlanning();
