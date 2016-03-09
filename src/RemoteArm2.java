@@ -19,12 +19,15 @@ import lejos.robotics.SampleProvider;
 import lejos.utility.Matrix;
 import lejos.utility.Delay;
 
-public class RemoteArm extends JPanel{
+public class RemoteArm2 extends JPanel{
 	public static TrackerReader tracker;
 	RMIRegulatedMotor m1;
 	RMIRegulatedMotor m2;
+	SampleProvider sp;
+	EV3UltrasonicSensor dSensor;
 	Matrix J;
 	boolean ESC;
+	float sample[] = {0};
 
 
 	public void goToAngle(double theta1, double theta2) {
@@ -71,13 +74,18 @@ public class RemoteArm extends JPanel{
 		return new Matrix(jacob);
 	}
 
-	public RemoteArm() {
+	public RemoteArm2() {
 		try {
 			RemoteEV3 brick = new RemoteEV3("10.0.1.1");
 			m1 = brick.createRegulatedMotor("A", 'L');
 			m2 = brick.createRegulatedMotor("D", 'L');
 			m1.setSpeed(50);
 			m2.setSpeed(50);
+			
+			dSensor = new EV3UltrasonicSensor(brick.getPort(SensorPort.S1.getName()));
+			sp = dSensor.getDistanceMode();
+			sample = new float[1];
+			//sp = brick.createSampleProvider("S1", "lejos.hardware.sensor.NXTUltrasonicSensor", "Distance");
 			ESC = false;
 			MouseListener l = new MyMouseListener();
 			addMouseListener(l);
@@ -141,6 +149,11 @@ public class RemoteArm extends JPanel{
 					break;
 				}
 				
+				sp.fetchSample(sample,0);
+				System.out.println(sample[0]);
+				if(sample[0] < 0.1){
+					continue;
+				}
 				
 				//System.out.println(i);
 				currentx = tracker.x;
@@ -234,6 +247,7 @@ public class RemoteArm extends JPanel{
 		try {
 			m1.close();
 			m2.close();
+			dSensor.close();
 		} catch (RemoteException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -284,7 +298,7 @@ public class RemoteArm extends JPanel{
 
 		Button.waitForAnyPress();
 		
-		RemoteArm ra = new RemoteArm();
+		RemoteArm2 ra = new RemoteArm2();
 		
 		JFrame frame = new JFrame("Click here to escape");
 		frame.add(ra);
