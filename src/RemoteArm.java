@@ -1,6 +1,13 @@
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
 import java.net.MalformedURLException;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
+
+import javax.swing.JFrame;
+import javax.swing.JPanel;
 
 import lejos.hardware.Button;
 import lejos.hardware.port.MotorPort;
@@ -9,11 +16,12 @@ import lejos.remote.ev3.RemoteEV3;
 import lejos.utility.Matrix;
 import lejos.utility.Delay;
 
-public class RemoteArm {
+public class RemoteArm extends JPanel{
 	public static TrackerReader tracker;
 	RMIRegulatedMotor m1;
 	RMIRegulatedMotor m2;
 	Matrix J;
+	boolean ESC;
 
 
 	public void goToAngle(double theta1, double theta2) {
@@ -40,7 +48,7 @@ public class RemoteArm {
 
 		jacob[0][0] = (uEnd - uStart) / angleMove;
 		jacob[1][0] = (vEnd - vStart) / angleMove;
-
+		
 		this.goToAngle(0, 0);
 
 		uStart = tracker.x;
@@ -54,6 +62,7 @@ public class RemoteArm {
 		jacob[0][1] = (uEnd - uStart) / angleMove;
 		jacob[1][1] = (vEnd - vStart) / angleMove;
 
+		
 		this.goToAngle(0, 0);
 
 		return new Matrix(jacob);
@@ -66,6 +75,10 @@ public class RemoteArm {
 			m2 = brick.createRegulatedMotor("D", 'L');
 			m1.setSpeed(50);
 			m2.setSpeed(50);
+			ESC = false;
+			MouseListener l = new MyMouseListener();
+			addMouseListener(l);
+			setFocusable(true);
 		} catch (RemoteException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -84,8 +97,8 @@ public class RemoteArm {
 	}
 
 	public void moveToTarget(double x, double y) {
-		int MAX_INT = 100;
-		double MAX_ANGLE = 10;
+		int MAX_INT = 10000;
+		double MAX_ANGLE = 15;
 		Matrix error, angles, J, Jupdate, deltax;
 		double currentx, currenty, e, eold, threshold;
 
@@ -116,16 +129,21 @@ public class RemoteArm {
 		//angles = J.inverse().times(error);
 
 
-		e = error.normF();
-		threshold = 20;
+		e = error.normF(); 	
+		threshold = 3;
 
 		try {
 			for (int i = 1; i<=MAX_INT && e > threshold; i++) {
+				if(this.ESC){
+					break;
+				}
 				//System.out.println(i);
 				currentx = tracker.x;
 				currenty = tracker.y;
-
-				deltax = this.J.inverse().times(error).times(-0.2);
+				
+				deltax = this.J.inverse().times(error);
+				deltax = deltax.times(0.3);
+				
 				if (Math.abs(deltax.get(0, 0)) > MAX_ANGLE) {
 					deltax.set(0, 0, MAX_ANGLE * Math.signum(deltax.get(0, 0)));
 				}
@@ -140,15 +158,16 @@ public class RemoteArm {
 				//double theta2 = Math.toDegrees(angles.get(1, 0)) % 360;
 				double theta1 = angles.get(0, 0);
 				double theta2 = angles.get(1, 0);
-				System.out.println(theta1);
-				System.out.println(theta2);
+				//System.out.println(theta1);
+				//System.out.println(theta2);
 				
 				
 				this.goToAngle(theta1, theta2);
 
-				error.set(0, 0, x - tracker.x);
-				error.set(1, 0, y - tracker.y);
-
+				//error.set(0, 0, x - tracker.x);
+				//error.set(1, 0, y - tracker.y);
+				error.set(0, 0, tracker.targetx - tracker.x);
+				error.set(1, 0, tracker.targety - tracker.y);
 
 
 				eold = e;
@@ -164,8 +183,8 @@ public class RemoteArm {
 					Jupdate = Jupdate.times(0.5);
 					this.J.plusEquals(Jupdate);
 					//this.J.print(System.out);
-					System.out.println("DeltaY");
-					deltay.print(System.out);
+					//System.out.println("DeltaY");
+					//deltay.print(System.out);
 				}
 			}
 			System.out.println("Done");
@@ -192,6 +211,9 @@ public class RemoteArm {
 
 
 		for(int i = 0; i < n; i++){
+			if(this.ESC){
+				break;
+			}
 			curX = curX + deltaX;
 			curY = curY + deltaY;
 			
@@ -213,6 +235,42 @@ public class RemoteArm {
 			this.closePorts();
 		}
 	}
+	
+
+	public class MyMouseListener implements MouseListener{
+
+		@Override
+		public void mouseClicked(MouseEvent arg0) {
+			ESC = true;
+			System.out.println("Break");
+			
+		}
+
+		@Override
+		public void mouseEntered(MouseEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void mouseExited(MouseEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void mousePressed(MouseEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void mouseReleased(MouseEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+		
+	}
 
 	public static void main(String[] args) {
 			// TODO Auto-generated catch block[] args) {
@@ -220,15 +278,23 @@ public class RemoteArm {
 		tracker.start();
 
 		Button.waitForAnyPress();
-
+		
 		RemoteArm ra = new RemoteArm();
+		
+		JFrame frame = new JFrame("Click here to escape");
+		frame.add(ra);
+		frame.setSize(250, 250);
+		frame.setVisible(true);
+		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+		
 		//System.out.println(tracker.targetx);
 		//System.out.println(tracker.targety);
 
 		//ra.J = ra.initJacobian();
 		//ra.J.print(System.out);
 		//while (true) {
-			Button.waitForAnyPress();
+			//Button.waitForAnyPress();
 			//ra.pathPlanning();
 			//ra.J = initJacobian();
 			ra.moveToTarget(tracker.targetx, tracker.targety);
