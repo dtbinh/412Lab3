@@ -18,7 +18,11 @@ import lejos.remote.ev3.RemoteEV3;
 import lejos.robotics.SampleProvider;
 import lejos.utility.Matrix;
 import lejos.utility.Delay;
-
+/*
+ * Robot are usin Visual servoing with collision detection
+ * -Uses RemoteEV3, jframe for kill switch
+ * -First start this application then start tracker server (tracker.py)
+ */
 public class RemoteArm2 extends JPanel{
 	public static TrackerReader tracker;
 	RMIRegulatedMotor m1;
@@ -29,18 +33,23 @@ public class RemoteArm2 extends JPanel{
 	boolean ESC;
 	float sample[] = {0};
 
-
+	/*
+	 * Rotates arm to specified angles
+	 */
 	public void goToAngle(double theta1, double theta2) {
 		try {
 			this.m1.rotateTo((int)theta1);
 			this.m2.rotateTo((int)theta2);
 		} catch (RemoteException e) {
-			// TODO Auto-generated catch block
 			this.closePorts();
 			e.printStackTrace();
 		}
 	}
 
+	/*
+	 * Initializes Jacobian using orthogonal arm movements and takes
+	 * difference in start and end postions 
+	 */
 	public Matrix initJacobian(){
 		double angleMove = 25.0;
 		double [][] jacob = {{0,0},{0,0}};
@@ -81,43 +90,36 @@ public class RemoteArm2 extends JPanel{
 			m2 = brick.createRegulatedMotor("D", 'L');
 			m1.setSpeed(50);
 			m2.setSpeed(50);
-			
 			this.J = initJacobian();
-			
+			//distance sensor init
 			dSensor = new EV3UltrasonicSensor(brick.getPort(SensorPort.S1.getName()));
 			sp = dSensor.getDistanceMode();
 			sample = new float[1];
-			//sp = brick.createSampleProvider("S1", "lejos.hardware.sensor.NXTUltrasonicSensor", "Distance");
 			ESC = false;
 			MouseListener l = new MyMouseListener();
 			addMouseListener(l);
 			setFocusable(true);
 		} catch (RemoteException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 			this.closePorts();
 		} catch (MalformedURLException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 			this.closePorts();
 		} catch (NotBoundException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 			this.closePorts();
 		}
-
-
 	}
 
+	/*
+	 * Moves robot end effector to target using visual servoing 
+	 * inludes collision detection
+	 */
 	public void moveToTarget(double x, double y, boolean OD) {
 		int MAX_INT = 10000;
 		double MAX_ANGLE = 15;
 		Matrix error, angles, J, Jupdate, deltax;
 		double currentx, currenty, e, eold, threshold;
-
-		//J = initJacobian();
-		
-		//this.J.print(System.out);
 		
 		error = new Matrix(2,1);
 		angles = new Matrix(2, 1);
@@ -132,15 +134,9 @@ public class RemoteArm2 extends JPanel{
 			angles.set(0, 0, m1.getTachoCount());
 			angles.set(1, 0, m2.getTachoCount());
 		} catch (RemoteException e1) {
-			// TODO Auto-generated catch block
 			this.closePorts();
 			e1.printStackTrace();
 		}
-
-
-
-		//angles = J.inverse().times(error);
-
 
 		e = error.normF(); 	
 		threshold = 3;
@@ -150,29 +146,26 @@ public class RemoteArm2 extends JPanel{
 				if(e < threshold){
 					break;
 				}
-				
+				//fetch distance measure and check for collision
 				sp.fetchSample(sample,0);
 				System.out.println(sample[0]);
 				if(sample[0] <= 0.1 && OD){
+					//rotate sensor until clear path is found
 					while(sample[0] <= 0.1){
 						sp.fetchSample(sample,0);
 						m1.rotate(15);
 					}
-					
-					//m2.rotate(45);
+					//avoid obstacle
 					this.pathPlanning();
 					
 					System.out.println("Done avoiding");
+					//set angles and error to new position
 					angles.set(0, 0, m1.getTachoCount());
 					angles.set(1, 0, m2.getTachoCount());
-					
 					error.set(0, 0, tracker.targetx - tracker.x);
 					error.set(1, 0, tracker.targety - tracker.y);
-					
-
 				}
-				
-				//System.out.println(i);
+
 				currentx = tracker.x;
 				currenty = tracker.y;
 				
@@ -186,28 +179,18 @@ public class RemoteArm2 extends JPanel{
 					deltax.set(1, 0, MAX_ANGLE * Math.signum(deltax.get(1, 0)));
 				}
 				
-				//System.out.println("DeltaX");
-				//deltax.print(System.out);
 				angles.plusEquals(deltax);
-				//double theta1 = Math.toDegrees(angles.get(0, 0)) % 360;
-				//double theta2 = Math.toDegrees(angles.get(1, 0)) % 360;
 				double theta1 = angles.get(0, 0);
 				double theta2 = angles.get(1, 0);
-				//System.out.println(theta1);
-				//System.out.println(theta2);
-				
 				
 				this.goToAngle(theta1, theta2);
 
-				//error.set(0, 0, x - tracker.x);
-				//error.set(1, 0, y - tracker.y);
 				error.set(0, 0, tracker.targetx - tracker.x);
 				error.set(1, 0, tracker.targety - tracker.y);
 
-
 				eold = e;
 				e = error.normF();
-
+				//Broyden update when error becomes too large
 				if (e > 10+eold) {
 					System.out.println("Broyden Update");
 					Matrix deltay = new Matrix(2,1);
@@ -217,9 +200,6 @@ public class RemoteArm2 extends JPanel{
 					Jupdate = (deltay.minus(this.J.times(deltax)).times(deltax.transpose())).times(1/deltax.transpose().times(deltax).get(0, 0));
 					Jupdate = Jupdate.times(0.5);
 					this.J.plusEquals(Jupdate);
-					//this.J.print(System.out);
-					//System.out.println("DeltaY");
-					//deltay.print(System.out);
 				}
 			}
 			System.out.println("Done");
@@ -229,37 +209,30 @@ public class RemoteArm2 extends JPanel{
 		}
 	}
 
+	/*
+	 * Moves arm towards point in clearpath direction
+	 */
 	public void pathPlanning(){
 		System.out.println("Obstacle detected: start path planning");
-		
-		double slope = (tracker.targety - tracker.y) / (tracker.targetx - tracker.x);
 
-		int n = 10;
-		
-		//this.J = initJacobian();
-	
 		double curX = tracker.x;
 		double curY = tracker.y;
 
 		double newX = tracker.x - 20;
 		double newY = tracker.y + 15;
-		
-		
-		double deltaX = (tracker.targetx - tracker.x)/n;
-		double deltaY = deltaX*slope;
 
 		this.moveToTarget(newX, newY, false);
-
-
 	}
-
+	
+	/*
+	 * Closes remote ports
+	 */
 	public void closePorts(){
 		try {
 			m1.close();
 			m2.close();
 			dSensor.close();
 		} catch (RemoteException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 			this.closePorts();
 		}
@@ -277,32 +250,27 @@ public class RemoteArm2 extends JPanel{
 
 		@Override
 		public void mouseEntered(MouseEvent arg0) {
-			// TODO Auto-generated method stub
 			
 		}
 
 		@Override
 		public void mouseExited(MouseEvent arg0) {
-			// TODO Auto-generated method stub
 			
 		}
 
 		@Override
 		public void mousePressed(MouseEvent arg0) {
-			// TODO Auto-generated method stub
 			
 		}
 
 		@Override
 		public void mouseReleased(MouseEvent arg0) {
-			// TODO Auto-generated method stub
 			
 		}
-		
 	}
 
 	public static void main(String[] args) {
-			// TODO Auto-generated catch block[] args) {
+		//start tracker client 
 		tracker = new TrackerReader();
 		tracker.start();
 
@@ -316,23 +284,8 @@ public class RemoteArm2 extends JPanel{
 		frame.setVisible(true);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-		
-		//System.out.println(tracker.targetx);
-		//System.out.println(tracker.targety);
-
-		//ra.J = ra.initJacobian();
-		//ra.J.print(System.out);
-		//while (true) {
-			//Button.waitForAnyPress();
-			//ra.pathPlanning();
-			//ra.J = initJacobian();
-			ra.moveToTarget(tracker.targetx, tracker.targety, true);
-			//ra.goToAngle(0.0, 0.0);
-			//ra.closePorts();
-			//ra.pathPlanning();
-		//}
+		ra.moveToTarget(tracker.targetx, tracker.targety, true);
 
 		ra.closePorts();
-
 	}
 }
